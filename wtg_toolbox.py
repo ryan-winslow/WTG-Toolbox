@@ -1,5 +1,7 @@
 import datetime
+import importlib
 import os
+import pkgutil
 import platform
 import shutil
 import socket
@@ -69,73 +71,53 @@ class ITToolbox(tk.Tk):
         self.show_category("Scripts")
 
     def build_tool_categories(self):
-        """Build the available tool categories and their actions."""
+        """Load available tool modules from the tools folder."""
 
-        return {
-            "Scripts": [
-                {
-                    "name": "Hello Script",
-                    "description": "Runs a simple test script.",
-                    "command": self.hello_script,
-                },
-                {
-                    "name": "Create Timestamp Log",
-                    "description": "Creates a small log file in your temp folder.",
-                    "command": self.create_timestamp_log,
-                },
-                {
-                    "name": "List Current Folder",
-                    "description": "Lists files in the folder where this program is running.",
-                    "command": self.list_current_folder,
-                },
-            ],
-            "Network": [
-                {
-                    "name": "Network Information",
-                    "description": "Displays the computer name and local IP address.",
-                    "command": self.network_information,
-                },
-                {
-                    "name": "Ping Localhost",
-                    "description": "Tests whether the local TCP/IP stack is responding.",
-                    "command": self.ping_localhost,
-                },
-                {
-                    "name": "DNS Lookup",
-                    "description": "Looks up the IP address for example.com.",
-                    "command": self.dns_lookup,
-                },
-            ],
-            "System": [
-                {
-                    "name": "System Information",
-                    "description": "Displays operating system and Python information.",
-                    "command": self.system_information,
-                },
-                {
-                    "name": "Disk Usage",
-                    "description": "Displays total, used, and free disk space.",
-                    "command": self.disk_usage,
-                },
-                {
-                    "name": "Environment Variables",
-                    "description": "Displays the current environment variables.",
-                    "command": self.environment_variables,
-                },
-            ],
-            "Utilities": [
-                {
-                    "name": "Open Current Folder",
-                    "description": "Opens the current folder in the system file browser.",
-                    "command": self.open_current_folder,
-                },
-                {
-                    "name": "Show Current Time",
-                    "description": "Displays the current date and time.",
-                    "command": self.show_current_time,
-                },
-            ],
-        }
+        categories = {}
+        base_path = os.path.join(os.path.dirname(__file__), "tools")
+
+        if not os.path.isdir(base_path):
+            return categories
+
+        for category_name in sorted(
+            entry
+            for entry in os.listdir(base_path)
+            if os.path.isdir(os.path.join(base_path, entry))
+            and not entry.startswith("__")
+        ):
+            category_path = os.path.join(base_path, category_name)
+            package_name = f"tools.{category_name}"
+            tools = []
+
+            for finder, module_name, ispkg in pkgutil.iter_modules([category_path]):
+                if ispkg:
+                    continue
+
+                module_path = f"{package_name}.{module_name}"
+                try:
+                    module = importlib.import_module(module_path)
+                except Exception as error:
+                    print(f"Failed to load {module_path}: {error}")
+                    continue
+
+                tool_name = getattr(module, "TOOL_NAME", module_name)
+                tool_description = getattr(module, "TOOL_DESCRIPTION", "")
+                tool_command = getattr(module, "run", None)
+
+                if callable(tool_command):
+                    tools.append(
+                        {
+                            "name": tool_name,
+                            "description": tool_description,
+                            "command": tool_command,
+                        }
+                    )
+
+            categories[category_name.capitalize()] = sorted(
+                tools, key=lambda item: item["name"]
+            )
+
+        return categories
 
     def create_toolbox(self):
         """Create the main toolbox layout."""
@@ -484,111 +466,6 @@ class ITToolbox(tk.Tk):
         """Show a script error in a popup."""
 
         messagebox.showerror(f"{script_name} Error", error_message)
-
-    # ---------------------------------------------------------
-    # Script functions
-    # Add your real IT scripts in this section.
-    # ---------------------------------------------------------
-
-    def hello_script(self):
-        return "Hello from the WTG Toolbox.\n\nThe script system is working."
-
-    def create_timestamp_log(self):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        file_path = os.path.join(tempfile.gettempdir(), f"wtg_toolbox_{timestamp}.log")
-
-        with open(file_path, "w", encoding="utf-8") as log_file:
-            log_file.write("WTG Toolbox test log\n")
-            log_file.write(f"Created: {datetime.datetime.now()}\n")
-            log_file.write(f"Computer: {socket.gethostname()}\n")
-
-        return f"Log created successfully:\n\n{file_path}"
-
-    def list_current_folder(self):
-        current_folder = os.getcwd()
-        entries = sorted(os.listdir(current_folder))
-
-        if not entries:
-            return f"Folder is empty:\n\n{current_folder}"
-
-        formatted_entries = "\n".join(f"  - {entry}" for entry in entries)
-        return f"Current folder:\n{current_folder}\n\nContents:\n{formatted_entries}"
-
-    def network_information(self):
-        hostname = socket.gethostname()
-
-        try:
-            local_ip = socket.gethostbyname(hostname)
-        except socket.gaierror:
-            local_ip = "Unable to determine local IP"
-
-        return f"Computer name: {hostname}\nLocal IP: {local_ip}"
-
-    def ping_localhost(self):
-        count_option = "-n" if platform.system() == "Windows" else "-c"
-
-        completed_process = subprocess.run(
-            ["ping", count_option, "4", "127.0.0.1"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-
-        output = completed_process.stdout or completed_process.stderr or "No ping output was returned."
-        return output.strip()
-
-    def dns_lookup(self):
-        domain = "example.com"
-        hostname, aliases, addresses = socket.gethostbyname_ex(domain)
-
-        alias_text = ", ".join(aliases) if aliases else "None"
-        address_text = ", ".join(addresses) if addresses else "None"
-
-        return f"Domain: {hostname}\nAliases: {alias_text}\nIP addresses: {address_text}"
-
-    def system_information(self):
-        return (
-            f"Computer name: {socket.gethostname()}\n"
-            f"Operating system: {platform.system()}\n"
-            f"OS release: {platform.release()}\n"
-            f"OS version: {platform.version()}\n"
-            f"Machine type: {platform.machine()}\n"
-            f"Processor: {platform.processor() or 'Unknown'}\n"
-            f"Python version: {platform.python_version()}"
-        )
-
-    def disk_usage(self):
-        disk_path = os.path.abspath(os.sep)
-        total, used, free = shutil.disk_usage(disk_path)
-
-        return (
-            f"Disk path: {disk_path}\n\n"
-            f"Total space: {self.format_bytes(total)}\n"
-            f"Used space: {self.format_bytes(used)}\n"
-            f"Free space: {self.format_bytes(free)}"
-        )
-
-    def environment_variables(self):
-        variables = sorted(os.environ.items())
-        return "\n".join(f"{name}={value}" for name, value in variables)
-
-    def open_current_folder(self):
-        folder = os.getcwd()
-        operating_system = platform.system()
-
-        if operating_system == "Windows":
-            os.startfile(folder)
-        elif operating_system == "Darwin":
-            subprocess.Popen(["open", folder])
-        else:
-            subprocess.Popen(["xdg-open", folder])
-
-        return f"Opened folder:\n\n{folder}"
-
-    def show_current_time(self):
-        current_time = datetime.datetime.now()
-        return current_time.strftime("Current date and time:\n\n%A, %B %d, %Y at %I:%M:%S %p")
 
     @staticmethod
     def format_bytes(number_of_bytes):
