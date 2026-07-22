@@ -68,6 +68,7 @@ is downloaded directly from GitHub using public access when available.
 
 TOOL_PACKAGE_FOLDER = "tools"
 DEFAULT_CATEGORY = "Scripts"
+EXCLUDED_TOOL_CATEGORIES = {"assets", "installs"}
 REPOSITORY_OWNER = "ryan-winslow"
 REPOSITORY_NAME = "WTG-Toolbox"
 REPOSITORY_REF = "main"
@@ -498,6 +499,7 @@ class ITToolbox(tk.Tk):
             for entry in os.listdir(base_path)
             if os.path.isdir(os.path.join(base_path, entry))
             and not entry.startswith("__")
+            and entry.casefold() not in EXCLUDED_TOOL_CATEGORIES
         ):
             category_path = os.path.join(base_path, category_name)
             package_name = f"{TOOL_PACKAGE_FOLDER}.{category_name}"
