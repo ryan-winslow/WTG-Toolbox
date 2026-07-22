@@ -6,6 +6,7 @@ import pkgutil
 import platform
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -61,10 +62,8 @@ Tools run in a background thread so the toolbox window stays responsive.
 FIRST-TIME INSTALLATION
 
 The standalone launcher downloads the complete WTG Toolbox repository to
-C:\\wtg-tools and starts the installed copy from that folder. Because the
-GitHub repository is private, the first download requires a GitHub token with
-read-only Contents access. Set WTG_TOOLBOX_GITHUB_TOKEN before starting the
-launcher, or enter the token when prompted. The token is not saved by the app.
+C:\wtg-tools and starts the installed copy from that folder. The repository
+is downloaded directly from GitHub using public access when available.
 """
 
 TOOL_PACKAGE_FOLDER = "tools"
@@ -77,7 +76,6 @@ REPOSITORY_ARCHIVE_URL = (
     f"{REPOSITORY_NAME}/zipball/{REPOSITORY_REF}"
 )
 GITHUB_API_VERSION = "2026-03-10"
-GITHUB_TOKEN_ENVIRONMENT_VARIABLE = "WTG_TOOLBOX_GITHUB_TOKEN"
 INSTALL_DIRECTORY = r"C:\wtg-tools"
 INSTALLED_LAUNCHER_PATH = os.path.join(INSTALL_DIRECTORY, "wtg_toolbox.py")
 MAX_REPOSITORY_DOWNLOAD_BYTES = 500 * 1024 * 1024
@@ -135,29 +133,6 @@ class RepositoryDownloadError(RuntimeError):
     """Raised when the complete toolbox repository cannot be installed."""
 
 
-class GitHubRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follow GitHub redirects without forwarding credentials off-host."""
-
-    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
-        redirected_request = super().redirect_request(
-            request,
-            file_pointer,
-            code,
-            message,
-            headers,
-            new_url,
-        )
-        if redirected_request is None:
-            return None
-
-        original_host = urlparse(request.full_url).hostname
-        redirect_host = urlparse(new_url).hostname
-        if original_host != redirect_host:
-            redirected_request.remove_header("Authorization")
-
-        return redirected_request
-
-
 def repository_is_complete(directory):
     """Return True when the minimum required repository files are installed."""
     return os.path.isfile(os.path.join(directory, "wtg_toolbox.py")) and os.path.isdir(
@@ -172,37 +147,16 @@ def running_from_install_directory():
     return current_directory == install_directory
 
 
-def request_github_token():
-    """Get a GitHub token from the environment or a one-time secure prompt."""
-    token = os.environ.get(GITHUB_TOKEN_ENVIRONMENT_VARIABLE, "").strip()
-    if token:
-        return token
-
-    root = tk.Tk()
-    root.withdraw()
-    token = simpledialog.askstring(
-        "GitHub Access Required",
-        "WTG-Toolbox is a private repository. Enter a GitHub token with "
-        "read-only Contents access. The token will not be saved:",
-        show="*",
-        parent=root,
-    )
-    root.destroy()
-    return token.strip() if token else ""
-
-
-def download_repository_archive(destination, token=""):
+def download_repository_archive(destination):
     """Download the configured GitHub repository archive to destination."""
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "WTG-Toolbox-Installer",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
     }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
 
     request = urllib.request.Request(REPOSITORY_ARCHIVE_URL, headers=headers)
-    opener = urllib.request.build_opener(GitHubRedirectHandler())
+    opener = urllib.request.build_opener()
 
     with opener.open(request, timeout=REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS) as response:
         declared_size = response.headers.get("Content-Length")
@@ -222,6 +176,83 @@ def download_repository_archive(destination, token=""):
                         "The repository archive exceeded the download size limit."
                     )
                 archive_file.write(chunk)
+
+
+def download_repository_archive_with_windows(destination):
+    """Download through Windows when Python cannot validate the HTTPS chain."""
+    if os.name != "nt" or not shutil.which("powershell.exe"):
+        raise RepositoryDownloadError(
+            "Windows PowerShell is not available for the secure download fallback."
+        )
+
+    powershell_script = """
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$headers = @{
+    'Accept' = 'application/vnd.github+json'
+    'User-Agent' = 'WTG-Toolbox-Installer'
+    'X-GitHub-Api-Version' = $env:WTG_TOOLBOX_API_VERSION
+}
+Invoke-WebRequest `
+    -UseBasicParsing `
+    -Uri $env:WTG_TOOLBOX_ARCHIVE_URL `
+    -Headers $headers `
+    -OutFile $env:WTG_TOOLBOX_ARCHIVE_DESTINATION `
+    -MaximumRedirection 10 `
+    -TimeoutSec $env:WTG_TOOLBOX_DOWNLOAD_TIMEOUT
+"""
+
+    child_environment = os.environ.copy()
+    child_environment.update(
+        {
+            "WTG_TOOLBOX_API_VERSION": GITHUB_API_VERSION,
+            "WTG_TOOLBOX_ARCHIVE_URL": REPOSITORY_ARCHIVE_URL,
+            "WTG_TOOLBOX_ARCHIVE_DESTINATION": os.path.abspath(destination),
+            "WTG_TOOLBOX_DOWNLOAD_TIMEOUT": str(
+                REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS
+            ),
+        }
+    )
+
+    try:
+        completed_process = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                powershell_script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS + 15,
+            check=False,
+            env=child_environment,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RepositoryDownloadError(
+            "The Windows repository download timed out."
+        ) from error
+
+    if completed_process.returncode != 0:
+        error_message = (
+            completed_process.stderr.strip()
+            or completed_process.stdout.strip()
+            or "Windows could not download the repository."
+        )
+        raise RepositoryDownloadError(error_message)
+
+    if not os.path.isfile(destination):
+        raise RepositoryDownloadError(
+            "Windows reported a successful download but no archive was created."
+        )
+
+    if os.path.getsize(destination) > MAX_REPOSITORY_DOWNLOAD_BYTES:
+        raise RepositoryDownloadError(
+            "The repository archive exceeded the download size limit."
+        )
 
 
 def extract_repository_archive(archive_path, destination):
@@ -263,27 +294,36 @@ def extract_repository_archive(archive_path, destination):
 
 def install_complete_repository():
     """Download, validate, and install the complete repository in C:\\wtg-tools."""
-    token = request_github_token()
-
     with tempfile.TemporaryDirectory(prefix="wtg_toolbox_download_") as temp_directory:
         archive_path = os.path.join(temp_directory, "repository.zip")
         extracted_path = os.path.join(temp_directory, "repository")
 
         try:
-            download_repository_archive(archive_path, token)
+            download_repository_archive(archive_path)
         except urllib.error.HTTPError as error:
             if error.code in (401, 403, 404):
                 raise RepositoryDownloadError(
-                    "GitHub denied access to the private repository. Provide a valid "
-                    "token with read-only Contents access."
+                    "GitHub denied access to the repository. Check that it is public "
+                    "and the URL is correct."
                 ) from error
             raise RepositoryDownloadError(
                 f"GitHub returned HTTP {error.code} while downloading the repository."
             ) from error
         except urllib.error.URLError as error:
-            raise RepositoryDownloadError(
-                f"Unable to reach GitHub: {error.reason}"
-            ) from error
+            if os.name == "nt" and isinstance(
+                error.reason, ssl.SSLCertVerificationError
+            ):
+                try:
+                    download_repository_archive_with_windows(archive_path)
+                except RepositoryDownloadError as windows_error:
+                    raise RepositoryDownloadError(
+                        "Python could not verify the GitHub certificate, and the "
+                        f"secure Windows download also failed: {windows_error}"
+                    ) from windows_error
+            else:
+                raise RepositoryDownloadError(
+                    f"Unable to reach GitHub: {error.reason}"
+                ) from error
 
         try:
             extract_repository_archive(archive_path, extracted_path)
