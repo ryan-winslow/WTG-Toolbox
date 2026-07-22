@@ -61,10 +61,8 @@ Tools run in a background thread so the toolbox window stays responsive.
 FIRST-TIME INSTALLATION
 
 The standalone launcher downloads the complete WTG Toolbox repository to
-C:\\wtg-tools and starts the installed copy from that folder. Because the
-GitHub repository is private, the first download requires a GitHub token with
-read-only Contents access. Set WTG_TOOLBOX_GITHUB_TOKEN before starting the
-launcher, or enter the token when prompted. The token is not saved by the app.
+C:\wtg-tools and starts the installed copy from that folder. The repository
+is downloaded directly from GitHub using public access when available.
 """
 
 TOOL_PACKAGE_FOLDER = "tools"
@@ -77,7 +75,6 @@ REPOSITORY_ARCHIVE_URL = (
     f"{REPOSITORY_NAME}/zipball/{REPOSITORY_REF}"
 )
 GITHUB_API_VERSION = "2026-03-10"
-GITHUB_TOKEN_ENVIRONMENT_VARIABLE = "WTG_TOOLBOX_GITHUB_TOKEN"
 INSTALL_DIRECTORY = r"C:\wtg-tools"
 INSTALLED_LAUNCHER_PATH = os.path.join(INSTALL_DIRECTORY, "wtg_toolbox.py")
 MAX_REPOSITORY_DOWNLOAD_BYTES = 500 * 1024 * 1024
@@ -135,29 +132,6 @@ class RepositoryDownloadError(RuntimeError):
     """Raised when the complete toolbox repository cannot be installed."""
 
 
-class GitHubRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follow GitHub redirects without forwarding credentials off-host."""
-
-    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
-        redirected_request = super().redirect_request(
-            request,
-            file_pointer,
-            code,
-            message,
-            headers,
-            new_url,
-        )
-        if redirected_request is None:
-            return None
-
-        original_host = urlparse(request.full_url).hostname
-        redirect_host = urlparse(new_url).hostname
-        if original_host != redirect_host:
-            redirected_request.remove_header("Authorization")
-
-        return redirected_request
-
-
 def repository_is_complete(directory):
     """Return True when the minimum required repository files are installed."""
     return os.path.isfile(os.path.join(directory, "wtg_toolbox.py")) and os.path.isdir(
@@ -172,37 +146,16 @@ def running_from_install_directory():
     return current_directory == install_directory
 
 
-def request_github_token():
-    """Get a GitHub token from the environment or a one-time secure prompt."""
-    token = os.environ.get(GITHUB_TOKEN_ENVIRONMENT_VARIABLE, "").strip()
-    if token:
-        return token
-
-    root = tk.Tk()
-    root.withdraw()
-    token = simpledialog.askstring(
-        "GitHub Access Required",
-        "WTG-Toolbox is a private repository. Enter a GitHub token with "
-        "read-only Contents access. The token will not be saved:",
-        show="*",
-        parent=root,
-    )
-    root.destroy()
-    return token.strip() if token else ""
-
-
-def download_repository_archive(destination, token=""):
+def download_repository_archive(destination):
     """Download the configured GitHub repository archive to destination."""
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "WTG-Toolbox-Installer",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
     }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
 
     request = urllib.request.Request(REPOSITORY_ARCHIVE_URL, headers=headers)
-    opener = urllib.request.build_opener(GitHubRedirectHandler())
+    opener = urllib.request.build_opener()
 
     with opener.open(request, timeout=REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS) as response:
         declared_size = response.headers.get("Content-Length")
@@ -263,19 +216,17 @@ def extract_repository_archive(archive_path, destination):
 
 def install_complete_repository():
     """Download, validate, and install the complete repository in C:\\wtg-tools."""
-    token = request_github_token()
-
     with tempfile.TemporaryDirectory(prefix="wtg_toolbox_download_") as temp_directory:
         archive_path = os.path.join(temp_directory, "repository.zip")
         extracted_path = os.path.join(temp_directory, "repository")
 
         try:
-            download_repository_archive(archive_path, token)
+            download_repository_archive(archive_path)
         except urllib.error.HTTPError as error:
             if error.code in (401, 403, 404):
                 raise RepositoryDownloadError(
-                    "GitHub denied access to the private repository. Provide a valid "
-                    "token with read-only Contents access."
+                    "GitHub denied access to the repository. Check that it is public "
+                    "and the URL is correct."
                 ) from error
             raise RepositoryDownloadError(
                 f"GitHub returned HTTP {error.code} while downloading the repository."
