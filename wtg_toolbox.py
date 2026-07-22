@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import tkinter as tk
+import tkinter.simpledialog as simpledialog
 from tkinter import messagebox
 
 
@@ -99,6 +100,22 @@ ABOUT_FONT = ("Arial", 10)
 DEFAULT_FONT = ("Arial", 12, "bold")
 README_TITLE_FONT = ("Arial", 16, "bold")
 ABOUT_TITLE_FONT = ("Arial", 15, "bold")
+PASSWORD = "1234"
+
+
+def authenticate():
+    """Request the password before launching the toolbox."""
+    root = tk.Tk()
+    root.withdraw()
+    user_password = simpledialog.askstring(
+        "WTG Toolbox Authentication",
+        "Enter password:",
+        show="*",
+        parent=root,
+    )
+    root.destroy()
+
+    return user_password == PASSWORD
 
 
 class ITToolbox(tk.Tk):
@@ -531,6 +548,10 @@ class ITToolbox(tk.Tk):
 
 def main():
     """Launch the WTG Toolbox application."""
+
+    if not authenticate():
+        messagebox.showerror("Authentication Failed", "Invalid password. Exiting.")
+        return
 
     app = ITToolbox()
     app.mainloop()
