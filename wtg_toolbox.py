@@ -1,3 +1,4 @@
+import ctypes
 import datetime
 import importlib
 import os
@@ -6,6 +7,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -103,6 +105,60 @@ ABOUT_TITLE_FONT = ("Arial", 15, "bold")
 PASSWORD = "1234"
 
 
+def is_admin():
+    """Return True when running with administrative privileges."""
+    if os.name == "nt":
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            return False
+    try:
+        return os.geteuid() == 0
+    except AttributeError:
+        return False
+
+
+def restart_as_admin():
+    """Attempt to relaunch the script with elevated permissions."""
+    if os.name != "nt":
+        return False
+
+    parameters = subprocess.list2cmdline([sys.argv[0], *sys.argv[1:]])
+    try:
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            sys.executable,
+            parameters,
+            None,
+            1,
+        )
+        return result > 32
+    except Exception:
+        return False
+
+
+def check_prerequisites():
+    """Verify Python version and required modules before launching."""
+    if sys.version_info < (3, 10):
+        messagebox.showerror(
+            "Prerequisite Error",
+            "Python 3.10 or newer is required to run WTG Toolbox.",
+        )
+        return False
+
+    try:
+        import tkinter
+    except ImportError:
+        messagebox.showerror(
+            "Prerequisite Error",
+            "Tkinter is required and not available in this Python installation.",
+        )
+        return False
+
+    return True
+
+
 def authenticate():
     """Request the password before launching the toolbox."""
     root = tk.Tk()
@@ -116,6 +172,32 @@ def authenticate():
     root.destroy()
 
     return user_password == PASSWORD
+
+
+def show_startup_status(message):
+    """Show a brief status dialog during startup checks."""
+    status_window = tk.Tk()
+    status_window.title("WTG Toolbox Startup")
+    status_window.geometry("360x120")
+    status_window.resizable(False, False)
+    status_window.configure(bg=APP_BG)
+    status_window.eval("tk::PlaceWindow . center")
+
+    label = tk.Label(
+        status_window,
+        text=message,
+        bg=APP_BG,
+        fg=TRAY_TEXT_FG,
+        font=DEFAULT_FONT,
+        wraplength=320,
+        justify="center",
+        padx=12,
+        pady=18,
+    )
+    label.pack(expand=True)
+
+    status_window.after(1200, status_window.destroy)
+    status_window.mainloop()
 
 
 class ITToolbox(tk.Tk):
@@ -549,6 +631,21 @@ class ITToolbox(tk.Tk):
 def main():
     """Launch the WTG Toolbox application."""
 
+    show_startup_status("Checking administrator privileges...")
+    if not is_admin():
+        if not restart_as_admin():
+            messagebox.showerror(
+                "Administrator Required",
+                "WTG Toolbox requires administrator privileges. Please restart as admin.",
+            )
+            return
+        return
+
+    show_startup_status("Verifying Python prerequisites...")
+    if not check_prerequisites():
+        return
+
+    show_startup_status("Authenticating user access...")
     if not authenticate():
         messagebox.showerror("Authentication Failed", "Invalid password. Exiting.")
         return
