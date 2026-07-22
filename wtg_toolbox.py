@@ -51,6 +51,55 @@ Some tools behave differently depending on the operating system.
 Tools run in a background thread so the toolbox window stays responsive.
 """
 
+TOOL_PACKAGE_FOLDER = "tools"
+DEFAULT_CATEGORY = "Scripts"
+WINDOW_WIDTH = 920
+WINDOW_HEIGHT = 680
+WINDOW_MIN_WIDTH = 760
+WINDOW_MIN_HEIGHT = 560
+APP_BG = "#252525"
+HANDLE_BG = "#181818"
+HANDLE_INNER_BG = "#444444"
+TOOLBOX_BG = "#b71c1c"
+TRAY_BG = "#303030"
+TRAY_TEXT_FG = "#eeeeee"
+TRAY_BUTTON_BG = "#5c5c5c"
+TRAY_BUTTON_FG = "white"
+TRAY_BUTTON_ACTIVE_BG = "#888888"
+CATEGORY_BUTTON_BG = "#5c5c5c"
+CATEGORY_BUTTON_FG = "white"
+CATEGORY_BUTTON_ACTIVE_BG = TITLE_BG = "#d7d7d7"
+CATEGORY_BUTTON_ACTIVE_FG = TITLE_FG = "#202020"
+DRAWER_BG = "#850000"
+DRAWER_TITLE_BG = "#202020"
+DRAWER_TITLE_FG = "#f5f5f5"
+CARD_BG = "#d0d0d0"
+CARD_TEXT_FG = "#202020"
+CARD_DESC_FG = "#404040"
+RUN_BUTTON_BG = "#3b3b3b"
+RUN_BUTTON_ACTIVE_BG = "#606060"
+CLOSE_BUTTON_BG = "#3b3b3b"
+CLOSE_BUTTON_FG = "white"
+CLOSE_BUTTON_ACTIVE_BG = "#606060"
+CLOSE_BUTTON_ACTIVE_FG = "white"
+README_BUTTON_BG = "#f2c94c"
+README_BUTTON_FG = "#171717"
+README_BUTTON_ACTIVE_BG = "#ffe487"
+README_BUTTON_ACTIVE_FG = "#000000"
+ABOUT_BG = "#f3f3f3"
+TITLE_BG = "#d7d7d7"
+TITLE_FG = "#202020"
+TITLE_FONT = ("Arial", 17, "bold")
+SECTION_FONT = ("Arial", 10, "bold")
+SCRIPT_FONT = ("Arial", 11, "bold")
+DESC_FONT = ("Arial", 9)
+BUTTON_FONT = ("Arial", 10, "bold")
+README_FONT = ("Arial", 10)
+ABOUT_FONT = ("Arial", 10)
+DEFAULT_FONT = ("Arial", 12, "bold")
+README_TITLE_FONT = ("Arial", 16, "bold")
+ABOUT_TITLE_FONT = ("Arial", 15, "bold")
+
 
 class ITToolbox(tk.Tk):
     APP_TITLE = "WTG Toolbox"
@@ -60,21 +109,21 @@ class ITToolbox(tk.Tk):
         super().__init__()
 
         self.title(f"{self.APP_TITLE} v{self.APP_VERSION}")
-        self.geometry("920x680")
-        self.minsize(760, 560)
-        self.configure(bg="#252525")
+        self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        self.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.configure(bg=APP_BG)
 
         self.tool_categories = self.build_tool_categories()
         self.category_buttons = {}
 
         self.create_toolbox()
-        self.show_category("Scripts")
+        self.show_category(DEFAULT_CATEGORY)
 
     def build_tool_categories(self):
         """Load available tool modules from the tools folder."""
 
         categories = {}
-        base_path = os.path.join(os.path.dirname(__file__), "tools")
+        base_path = os.path.join(os.path.dirname(__file__), TOOL_PACKAGE_FOLDER)
 
         if not os.path.isdir(base_path):
             return categories
@@ -86,7 +135,7 @@ class ITToolbox(tk.Tk):
             and not entry.startswith("__")
         ):
             category_path = os.path.join(base_path, category_name)
-            package_name = f"tools.{category_name}"
+            package_name = f"{TOOL_PACKAGE_FOLDER}.{category_name}"
             tools = []
 
             for finder, module_name, ispkg in pkgutil.iter_modules([category_path]):
@@ -124,7 +173,7 @@ class ITToolbox(tk.Tk):
 
         handle = tk.Frame(
             self,
-            bg="#181818",
+            bg=HANDLE_BG,
             bd=5,
             relief="raised",
             width=300,
@@ -133,18 +182,18 @@ class ITToolbox(tk.Tk):
         handle.place(relx=0.5, y=15, anchor="n")
         handle.pack_propagate(False)
 
-        handle_inner = tk.Frame(handle, bg="#444444", bd=3, relief="sunken")
+        handle_inner = tk.Frame(handle, bg=HANDLE_INNER_BG, bd=3, relief="sunken")
         handle_inner.pack(fill="both", expand=True, padx=25, pady=11)
 
-        toolbox = tk.Frame(self, bg="#b71c1c", bd=7, relief="raised")
+        toolbox = tk.Frame(self, bg=TOOLBOX_BG, bd=7, relief="raised")
         toolbox.pack(fill="both", expand=True, padx=32, pady=(58, 28))
 
         title_plate = tk.Label(
             toolbox,
             text="WTG TOOLBOX",
-            bg="#d7d7d7",
-            fg="#202020",
-            font=("Arial", 17, "bold"),
+            bg=TITLE_BG,
+            fg=TITLE_FG,
+            font=TITLE_FONT,
             bd=4,
             relief="raised",
             padx=25,
@@ -152,19 +201,19 @@ class ITToolbox(tk.Tk):
         )
         title_plate.pack(pady=(18, 12))
 
-        category_tray = tk.Frame(toolbox, bg="#303030", bd=5, relief="sunken")
+        category_tray = tk.Frame(toolbox, bg=TRAY_BG, bd=5, relief="sunken")
         category_tray.pack(fill="x", padx=20, pady=(0, 12))
 
         category_title = tk.Label(
             category_tray,
             text="TOOL CATEGORIES",
-            bg="#303030",
-            fg="#eeeeee",
-            font=("Arial", 10, "bold"),
+            bg=TRAY_BG,
+            fg=TRAY_TEXT_FG,
+            font=SECTION_FONT,
         )
         category_title.pack(anchor="w", padx=10, pady=(7, 3))
 
-        category_button_frame = tk.Frame(category_tray, bg="#303030")
+        category_button_frame = tk.Frame(category_tray, bg=TRAY_BG)
         category_button_frame.pack(fill="x", padx=7, pady=(0, 8))
 
         for category_name in self.tool_categories:
@@ -172,11 +221,11 @@ class ITToolbox(tk.Tk):
                 category_button_frame,
                 text=category_name,
                 command=lambda name=category_name: self.show_category(name),
-                bg="#5c5c5c",
-                fg="white",
-                activebackground="#888888",
-                activeforeground="white",
-                font=("Arial", 10, "bold"),
+                bg=CATEGORY_BUTTON_BG,
+                fg=CATEGORY_BUTTON_FG,
+                activebackground=TRAY_BUTTON_ACTIVE_BG,
+                activeforeground=CATEGORY_BUTTON_FG,
+                font=BUTTON_FONT,
                 bd=3,
                 relief="raised",
                 cursor="hand2",
@@ -186,38 +235,38 @@ class ITToolbox(tk.Tk):
             button.pack(side="left", fill="x", expand=True, padx=4)
             self.category_buttons[category_name] = button
 
-        drawer = tk.Frame(toolbox, bg="#850000", bd=5, relief="sunken")
+        drawer = tk.Frame(toolbox, bg=DRAWER_BG, bd=5, relief="sunken")
         drawer.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         self.drawer_title = tk.Label(
             drawer,
             text="SCRIPTS",
-            bg="#202020",
-            fg="#f5f5f5",
-            font=("Arial", 12, "bold"),
+            bg=DRAWER_TITLE_BG,
+            fg=DRAWER_TITLE_FG,
+            font=DEFAULT_FONT,
             pady=8,
         )
         self.drawer_title.pack(fill="x")
 
-        self.script_frame = tk.Frame(drawer, bg="#850000", padx=12, pady=12)
+        self.script_frame = tk.Frame(drawer, bg=DRAWER_BG, padx=12, pady=12)
         self.script_frame.pack(fill="both", expand=True)
 
-        bottom_red_space = tk.Frame(toolbox, bg="#b71c1c", height=48)
+        bottom_red_space = tk.Frame(toolbox, bg=TOOLBOX_BG, height=48)
         bottom_red_space.pack(fill="x", padx=20, pady=(0, 10))
         bottom_red_space.pack_propagate(False)
 
-        button_frame = tk.Frame(bottom_red_space, bg="#b71c1c")
+        button_frame = tk.Frame(bottom_red_space, bg=TOOLBOX_BG)
         button_frame.pack(anchor="center", pady=5)
 
         readme_button = tk.Button(
             button_frame,
             text="README",
             command=self.show_readme,
-            bg="#f2c94c",
-            fg="#171717",
-            activebackground="#ffe487",
-            activeforeground="#000000",
-            font=("Arial", 10, "bold"),
+            bg=README_BUTTON_BG,
+            fg=README_BUTTON_FG,
+            activebackground=README_BUTTON_ACTIVE_BG,
+            activeforeground=README_BUTTON_ACTIVE_FG,
+            font=BUTTON_FONT,
             bd=4,
             relief="raised",
             cursor="hand2",
@@ -230,11 +279,11 @@ class ITToolbox(tk.Tk):
             button_frame,
             text="ABOUT",
             command=self.show_about,
-            bg="#f2c94c",
-            fg="#171717",
-            activebackground="#ffe487",
-            activeforeground="#000000",
-            font=("Arial", 10, "bold"),
+            bg=README_BUTTON_BG,
+            fg=README_BUTTON_FG,
+            activebackground=README_BUTTON_ACTIVE_BG,
+            activeforeground=README_BUTTON_ACTIVE_FG,
+            font=BUTTON_FONT,
             bd=4,
             relief="raised",
             cursor="hand2",
@@ -250,9 +299,9 @@ class ITToolbox(tk.Tk):
 
         for category, button in self.category_buttons.items():
             if category == category_name:
-                button.config(bg="#d7d7d7", fg="#202020", relief="sunken")
+                button.config(bg=CATEGORY_BUTTON_ACTIVE_BG, fg=CATEGORY_BUTTON_ACTIVE_FG, relief="sunken")
             else:
-                button.config(bg="#5c5c5c", fg="white", relief="raised")
+                button.config(bg=CATEGORY_BUTTON_BG, fg=CATEGORY_BUTTON_FG, relief="raised")
 
         for widget in self.script_frame.winfo_children():
             widget.destroy()
@@ -270,20 +319,20 @@ class ITToolbox(tk.Tk):
     def create_script_row(self, row, name, description, command):
         """Create one script entry in the drawer."""
 
-        script_panel = tk.Frame(self.script_frame, bg="#d0d0d0", bd=4, relief="raised")
+        script_panel = tk.Frame(self.script_frame, bg=CARD_BG, bd=4, relief="raised")
         script_panel.grid(row=row, column=0, sticky="ew", padx=4, pady=5)
 
         self.script_frame.columnconfigure(0, weight=1)
 
-        text_frame = tk.Frame(script_panel, bg="#d0d0d0")
+        text_frame = tk.Frame(script_panel, bg=CARD_BG)
         text_frame.pack(side="left", fill="both", expand=True, padx=10, pady=7)
 
         name_label = tk.Label(
             text_frame,
             text=name,
-            bg="#d0d0d0",
-            fg="#202020",
-            font=("Arial", 11, "bold"),
+            bg=CARD_BG,
+            fg=CARD_TEXT_FG,
+            font=SCRIPT_FONT,
             anchor="w",
         )
         name_label.pack(fill="x")
@@ -291,9 +340,9 @@ class ITToolbox(tk.Tk):
         description_label = tk.Label(
             text_frame,
             text=description,
-            bg="#d0d0d0",
-            fg="#404040",
-            font=("Arial", 9),
+            bg=CARD_BG,
+            fg=CARD_DESC_FG,
+            font=DESC_FONT,
             anchor="w",
         )
         description_label.pack(fill="x", pady=(2, 0))
@@ -302,11 +351,11 @@ class ITToolbox(tk.Tk):
             script_panel,
             text="RUN",
             command=lambda: self.run_script(name, command),
-            bg="#3b3b3b",
-            fg="white",
-            activebackground="#606060",
-            activeforeground="white",
-            font=("Arial", 10, "bold"),
+            bg=RUN_BUTTON_BG,
+            fg=TRAY_BUTTON_FG,
+            activebackground=RUN_BUTTON_ACTIVE_BG,
+            activeforeground=TRAY_BUTTON_FG,
+            font=BUTTON_FONT,
             bd=3,
             relief="raised",
             cursor="hand2",
@@ -322,15 +371,15 @@ class ITToolbox(tk.Tk):
         readme_window.title("WTG Toolbox README")
         readme_window.geometry("620x470")
         readme_window.minsize(500, 350)
-        readme_window.configure(bg="#b71c1c")
+        readme_window.configure(bg=TOOLBOX_BG)
         readme_window.transient(self)
 
         title = tk.Label(
             readme_window,
             text="WTG TOOLBOX README",
-            bg="#d7d7d7",
-            fg="#202020",
-            font=("Arial", 16, "bold"),
+            bg=TITLE_BG,
+            fg=TITLE_FG,
+            font=README_TITLE_FONT,
             bd=4,
             relief="raised",
             padx=20,
@@ -338,7 +387,7 @@ class ITToolbox(tk.Tk):
         )
         title.pack(pady=(18, 12))
 
-        text_frame = tk.Frame(readme_window, bg="#202020", bd=5, relief="sunken")
+        text_frame = tk.Frame(readme_window, bg=TRAY_BG, bd=5, relief="sunken")
         text_frame.pack(fill="both", expand=True, padx=20, pady=(0, 12))
 
         scrollbar = tk.Scrollbar(text_frame)
@@ -347,8 +396,8 @@ class ITToolbox(tk.Tk):
         readme_text = tk.Text(
             text_frame,
             bg="#f0f0f0",
-            fg="#202020",
-            font=("Arial", 10),
+            fg=TITLE_FG,
+            font=README_FONT,
             wrap="word",
             padx=14,
             pady=14,
@@ -365,11 +414,11 @@ class ITToolbox(tk.Tk):
             readme_window,
             text="CLOSE",
             command=readme_window.destroy,
-            bg="#3b3b3b",
-            fg="white",
-            activebackground="#606060",
-            activeforeground="white",
-            font=("Arial", 10, "bold"),
+            bg=RUN_BUTTON_BG,
+            fg=TRAY_BUTTON_FG,
+            activebackground=RUN_BUTTON_ACTIVE_BG,
+            activeforeground=TRAY_BUTTON_FG,
+            font=BUTTON_FONT,
             bd=3,
             relief="raised",
             cursor="hand2",
@@ -384,15 +433,15 @@ class ITToolbox(tk.Tk):
         about_window = tk.Toplevel(self)
         about_window.title("About WTG Toolbox")
         about_window.geometry("480x240")
-        about_window.configure(bg="#f3f3f3")
+        about_window.configure(bg=ABOUT_BG)
         about_window.transient(self)
 
         title = tk.Label(
             about_window,
             text="WTG TOOLBOX",
-            bg="#d7d7d7",
-            fg="#202020",
-            font=("Arial", 15, "bold"),
+            bg=TITLE_BG,
+            fg=TITLE_FG,
+            font=ABOUT_TITLE_FONT,
             bd=4,
             relief="raised",
             padx=18,
@@ -409,9 +458,9 @@ class ITToolbox(tk.Tk):
         info_label = tk.Label(
             about_window,
             text=description,
-            bg="#f3f3f3",
-            fg="#202020",
-            font=("Arial", 10),
+            bg=ABOUT_BG,
+            fg=TITLE_FG,
+            font=ABOUT_FONT,
             justify="center",
             padx=20,
             pady=8,
@@ -422,11 +471,11 @@ class ITToolbox(tk.Tk):
             about_window,
             text="CLOSE",
             command=about_window.destroy,
-            bg="#3b3b3b",
-            fg="white",
-            activebackground="#606060",
-            activeforeground="white",
-            font=("Arial", 10, "bold"),
+            bg=RUN_BUTTON_BG,
+            fg=TRAY_BUTTON_FG,
+            activebackground=RUN_BUTTON_ACTIVE_BG,
+            activeforeground=TRAY_BUTTON_FG,
+            font=BUTTON_FONT,
             bd=3,
             relief="raised",
             cursor="hand2",
