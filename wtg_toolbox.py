@@ -12,7 +12,12 @@ import tempfile
 import threading
 import tkinter as tk
 import tkinter.simpledialog as simpledialog
+import urllib.error
+import urllib.request
+import zipfile
+from pathlib import PurePosixPath
 from tkinter import messagebox
+from urllib.parse import urlparse
 
 
 README_CONTENTS = """WTG TOOLBOX
@@ -52,10 +57,31 @@ NOTES
 
 Some tools behave differently depending on the operating system.
 Tools run in a background thread so the toolbox window stays responsive.
+
+FIRST-TIME INSTALLATION
+
+The standalone launcher downloads the complete WTG Toolbox repository to
+C:\\wtg-tools and starts the installed copy from that folder. Because the
+GitHub repository is private, the first download requires a GitHub token with
+read-only Contents access. Set WTG_TOOLBOX_GITHUB_TOKEN before starting the
+launcher, or enter the token when prompted. The token is not saved by the app.
 """
 
 TOOL_PACKAGE_FOLDER = "tools"
 DEFAULT_CATEGORY = "Scripts"
+REPOSITORY_OWNER = "ryan-winslow"
+REPOSITORY_NAME = "WTG-Toolbox"
+REPOSITORY_REF = "main"
+REPOSITORY_ARCHIVE_URL = (
+    f"https://api.github.com/repos/{REPOSITORY_OWNER}/"
+    f"{REPOSITORY_NAME}/zipball/{REPOSITORY_REF}"
+)
+GITHUB_API_VERSION = "2026-03-10"
+GITHUB_TOKEN_ENVIRONMENT_VARIABLE = "WTG_TOOLBOX_GITHUB_TOKEN"
+INSTALL_DIRECTORY = r"C:\wtg-tools"
+INSTALLED_LAUNCHER_PATH = os.path.join(INSTALL_DIRECTORY, "wtg_toolbox.py")
+MAX_REPOSITORY_DOWNLOAD_BYTES = 500 * 1024 * 1024
+REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS = 120
 WINDOW_WIDTH = 920
 WINDOW_HEIGHT = 680
 WINDOW_MIN_WIDTH = 760
@@ -103,6 +129,206 @@ DEFAULT_FONT = ("Arial", 12, "bold")
 README_TITLE_FONT = ("Arial", 16, "bold")
 ABOUT_TITLE_FONT = ("Arial", 15, "bold")
 PASSWORD = "1234"
+
+
+class RepositoryDownloadError(RuntimeError):
+    """Raised when the complete toolbox repository cannot be installed."""
+
+
+class GitHubRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow GitHub redirects without forwarding credentials off-host."""
+
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        redirected_request = super().redirect_request(
+            request,
+            file_pointer,
+            code,
+            message,
+            headers,
+            new_url,
+        )
+        if redirected_request is None:
+            return None
+
+        original_host = urlparse(request.full_url).hostname
+        redirect_host = urlparse(new_url).hostname
+        if original_host != redirect_host:
+            redirected_request.remove_header("Authorization")
+
+        return redirected_request
+
+
+def repository_is_complete(directory):
+    """Return True when the minimum required repository files are installed."""
+    return os.path.isfile(os.path.join(directory, "wtg_toolbox.py")) and os.path.isdir(
+        os.path.join(directory, TOOL_PACKAGE_FOLDER)
+    )
+
+
+def running_from_install_directory():
+    """Return True when this launcher is the installed C:\\wtg-tools copy."""
+    current_directory = os.path.normcase(os.path.realpath(os.path.dirname(__file__)))
+    install_directory = os.path.normcase(os.path.realpath(INSTALL_DIRECTORY))
+    return current_directory == install_directory
+
+
+def request_github_token():
+    """Get a GitHub token from the environment or a one-time secure prompt."""
+    token = os.environ.get(GITHUB_TOKEN_ENVIRONMENT_VARIABLE, "").strip()
+    if token:
+        return token
+
+    root = tk.Tk()
+    root.withdraw()
+    token = simpledialog.askstring(
+        "GitHub Access Required",
+        "WTG-Toolbox is a private repository. Enter a GitHub token with "
+        "read-only Contents access. The token will not be saved:",
+        show="*",
+        parent=root,
+    )
+    root.destroy()
+    return token.strip() if token else ""
+
+
+def download_repository_archive(destination, token=""):
+    """Download the configured GitHub repository archive to destination."""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "WTG-Toolbox-Installer",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(REPOSITORY_ARCHIVE_URL, headers=headers)
+    opener = urllib.request.build_opener(GitHubRedirectHandler())
+
+    with opener.open(request, timeout=REPOSITORY_DOWNLOAD_TIMEOUT_SECONDS) as response:
+        declared_size = response.headers.get("Content-Length")
+        if declared_size and int(declared_size) > MAX_REPOSITORY_DOWNLOAD_BYTES:
+            raise RepositoryDownloadError("The repository archive is unexpectedly large.")
+
+        downloaded_bytes = 0
+        with open(destination, "wb") as archive_file:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+
+                downloaded_bytes += len(chunk)
+                if downloaded_bytes > MAX_REPOSITORY_DOWNLOAD_BYTES:
+                    raise RepositoryDownloadError(
+                        "The repository archive exceeded the download size limit."
+                    )
+                archive_file.write(chunk)
+
+
+def extract_repository_archive(archive_path, destination):
+    """Safely extract a GitHub archive, removing its generated root folder."""
+    destination = os.path.abspath(destination)
+    os.makedirs(destination, exist_ok=True)
+
+    with zipfile.ZipFile(archive_path) as archive:
+        members = [member for member in archive.infolist() if member.filename]
+        root_folders = {
+            PurePosixPath(member.filename).parts[0]
+            for member in members
+            if PurePosixPath(member.filename).parts
+        }
+        if len(root_folders) != 1:
+            raise RepositoryDownloadError("The repository archive has an invalid layout.")
+
+        root_folder = root_folders.pop()
+        for member in members:
+            path_parts = PurePosixPath(member.filename).parts
+            if not path_parts or path_parts[0] != root_folder or len(path_parts) == 1:
+                continue
+
+            relative_parts = path_parts[1:]
+            target_path = os.path.abspath(os.path.join(destination, *relative_parts))
+            if os.path.commonpath([destination, target_path]) != destination:
+                raise RepositoryDownloadError(
+                    "The repository archive contains an unsafe file path."
+                )
+
+            if member.is_dir():
+                os.makedirs(target_path, exist_ok=True)
+                continue
+
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with archive.open(member) as source_file, open(target_path, "wb") as target_file:
+                shutil.copyfileobj(source_file, target_file)
+
+
+def install_complete_repository():
+    """Download, validate, and install the complete repository in C:\\wtg-tools."""
+    token = request_github_token()
+
+    with tempfile.TemporaryDirectory(prefix="wtg_toolbox_download_") as temp_directory:
+        archive_path = os.path.join(temp_directory, "repository.zip")
+        extracted_path = os.path.join(temp_directory, "repository")
+
+        try:
+            download_repository_archive(archive_path, token)
+        except urllib.error.HTTPError as error:
+            if error.code in (401, 403, 404):
+                raise RepositoryDownloadError(
+                    "GitHub denied access to the private repository. Provide a valid "
+                    "token with read-only Contents access."
+                ) from error
+            raise RepositoryDownloadError(
+                f"GitHub returned HTTP {error.code} while downloading the repository."
+            ) from error
+        except urllib.error.URLError as error:
+            raise RepositoryDownloadError(
+                f"Unable to reach GitHub: {error.reason}"
+            ) from error
+
+        try:
+            extract_repository_archive(archive_path, extracted_path)
+        except zipfile.BadZipFile as error:
+            raise RepositoryDownloadError(
+                "GitHub returned an invalid repository archive."
+            ) from error
+
+        if not repository_is_complete(extracted_path):
+            raise RepositoryDownloadError(
+                "The downloaded repository is missing wtg_toolbox.py or the tools folder."
+            )
+
+        os.makedirs(INSTALL_DIRECTORY, exist_ok=True)
+        shutil.copytree(extracted_path, INSTALL_DIRECTORY, dirs_exist_ok=True)
+
+    if not repository_is_complete(INSTALL_DIRECTORY):
+        raise RepositoryDownloadError(
+            f"The repository could not be installed completely in {INSTALL_DIRECTORY}."
+        )
+
+
+def ensure_local_repository():
+    """Install the repository if needed and launch its C:\\wtg-tools copy."""
+    if not repository_is_complete(INSTALL_DIRECTORY):
+        try:
+            install_complete_repository()
+        except (OSError, RepositoryDownloadError) as error:
+            messagebox.showerror("WTG Toolbox Installation Failed", str(error))
+            return False
+
+    if running_from_install_directory():
+        return True
+
+    try:
+        subprocess.Popen(
+            [sys.executable, INSTALLED_LAUNCHER_PATH, *sys.argv[1:]],
+            cwd=INSTALL_DIRECTORY,
+        )
+    except OSError as error:
+        messagebox.showerror(
+            "WTG Toolbox Launch Failed",
+            f"The repository was installed, but the local launcher could not start:\n\n{error}",
+        )
+    return False
 
 
 def is_admin():
@@ -202,7 +428,7 @@ def show_startup_status(message):
 
 class ITToolbox(tk.Tk):
     APP_TITLE = "WTG Toolbox"
-    APP_VERSION = "1.1.0"
+    APP_VERSION = "1.2.0"
 
     def __init__(self):
         super().__init__()
@@ -644,6 +870,13 @@ def main():
     show_startup_status("Verifying Python prerequisites...")
     if not check_prerequisites():
         return
+
+    if not running_from_install_directory() or not repository_is_complete(
+        INSTALL_DIRECTORY
+    ):
+        show_startup_status("Preparing the local WTG Toolbox repository...")
+        if not ensure_local_repository():
+            return
 
     show_startup_status("Authenticating user access...")
     if not authenticate():
